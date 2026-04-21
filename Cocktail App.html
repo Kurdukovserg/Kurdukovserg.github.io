@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Cocktail Shaker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; font-family:'DM Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+
+/* Desktop: centered phone on ambient background */
+body {
+  background: #04000D;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Ambient glow behind the phone */
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background:
+    radial-gradient(ellipse 60% 55% at 50% 48%, rgba(123,97,255,0.13) 0%, transparent 65%),
+    radial-gradient(ellipse 40% 35% at 30% 60%, rgba(255,79,219,0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 40% 35% at 70% 35%, rgba(90,160,255,0.07) 0%, transparent 55%);
+  pointer-events:none; z-index:0;
+}
+
+#root { position:relative; z-index:1; }
+
+/* Phone shell — visible on desktop only */
+.phone-shell {
+  width: 390px;
+  height: 844px;
+  border-radius: 52px;
+  overflow: hidden;
+  position: relative;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.14),
+    0 0 0 3px rgba(255,255,255,0.05),
+    0 60px 120px rgba(0,0,0,0.75),
+    0 16px 32px rgba(0,0,0,0.55),
+    inset 0 0 0 1px rgba(255,255,255,0.06);
+  background: #000;
+  flex-shrink:0;
+}
+
+/* Dynamic island */
+.island {
+  position:absolute; top:12px; left:50%; transform:translateX(-50%);
+  width:120px; height:34px; border-radius:20px;
+  background:#000; z-index:200; pointer-events:none;
+}
+
+/* On real mobile: go full screen */
+@media (max-width: 430px) {
+  body { background:#000; overflow:auto; }
+  body::before { display:none; }
+  .phone-shell {
+    width:100vw; height:100dvh;
+    border-radius:0; box-shadow:none;
+    border:none;
+  }
+  .island { display:none; }
+}
+
+/* Animations */
+@keyframes shakerShake {
+  0%   { transform: rotate(0deg)   translateY(0px); }
+  8%   { transform: rotate(-14deg) translateY(-10px); }
+  18%  { transform: rotate(16deg)  translateY(-22px); }
+  28%  { transform: rotate(-13deg) translateY(-14px); }
+  38%  { transform: rotate(15deg)  translateY(-28px); }
+  50%  { transform: rotate(-11deg) translateY(-18px); }
+  62%  { transform: rotate(12deg)  translateY(-24px); }
+  74%  { transform: rotate(-8deg)  translateY(-10px); }
+  86%  { transform: rotate(6deg)   translateY(-5px); }
+  100% { transform: rotate(0deg)   translateY(0px); }
+}
+@keyframes floatAnim {
+  0%,100% { transform: translateY(0px); }
+  50%     { transform: translateY(-12px); }
+}
+@keyframes ringExpand {
+  0%   { transform: translate(-50%,-50%) scale(0.4); opacity:0.6; }
+  100% { transform: translate(-50%,-50%) scale(2.4); opacity:0; }
+}
+@keyframes ring2Expand {
+  0%   { transform: translate(-50%,-50%) scale(0.4); opacity:0.38; }
+  100% { transform: translate(-50%,-50%) scale(2.8); opacity:0; }
+}
+@keyframes glowPulse {
+  0%,100% { opacity:.6; }
+  50%     { opacity:1; }
+}
+@keyframes fadeIn {
+  from { opacity:0; transform:translateY(10px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes scaleIn {
+  from { opacity:0; transform:scale(0.88); }
+  to   { opacity:1; transform:scale(1); }
+}
+@keyframes indeterminate {
+  0%   { width:0%;  margin-left:0%; }
+  50%  { width:70%; margin-left:15%; }
+  100% { width:0%;  margin-left:100%; }
+}
+
+/* Hide scrollbar inside app */
+.app-scroll::-webkit-scrollbar { display:none; }
+.app-scroll { -ms-overflow-style:none; scrollbar-width:none; }
+
+/* Screen transitions */
+.screen-enter { animation: fadeIn 0.35s cubic-bezier(.16,1,.3,1) forwards; }
+.screen-scale-enter { animation: scaleIn 0.4s cubic-bezier(.16,1,.3,1) forwards; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ── Tokens ──────────────────────────────────────────────── */
+const C = {
+  bg:     '#0D0014',
+  bgDeep: '#07070D',
+  pink:   '#FF4FDB',
+  purple: '#7B61FF',
+  text:   '#FFFFFF',
+  muted:  '#A9A6B2',
+  sans:   '"DM Sans", system-ui, sans-serif',
+};
+
+/* ── Data ────────────────────────────────────────────────── */
+const COCKTAILS = [
+  {
+    id: 0,
+    name: 'Whiskey Sour',
+    desc: 'A timeless classic with the perfect balance of citrus and sweetness.',
+    glowRgb: '220,155,0',
+    accent: '#FF4FAE',
+    img: 'assets/cocktails/whiskey_sour.png',
+    abv:'18%', glass:'Coupe', style:'Citrus', type:'Short drink',
+    method:'Shake / Fine strain', ice:'Cubed',
+    tasteProfile:'Bright • Silky • Balanced',
+    garnish:'Lemon twist',
+    ingredients:[
+      {t:'liquid',a:'60 ml',  n:'Bourbon whiskey'},
+      {t:'liquid',a:'30 ml',  n:'Fresh lemon juice'},
+      {t:'liquid',a:'22.5 ml',n:'Simple syrup'},
+      {t:'count', a:'1',      n:'Egg white (optional)'},
+    ],
+    steps:[
+      'Add all ingredients into a shaker without ice.',
+      'Dry shake to emulsify the egg white.',
+      'Add ice and shake again until chilled.',
+      'Strain into a chilled coupe glass.',
+      'Garnish with a lemon twist.',
+    ],
+  },
+  {
+    id: 1,
+    name: 'Berry Mint Highball',
+    desc: 'A refreshing fruity highball with mint and citrus notes.',
+    glowRgb: '255,70,100',
+    accent: '#FF4A7F',
+    img: 'assets/cocktails/berry_highball.png',
+    abv:'12%', glass:'Highball', style:'Refreshing', type:'Long drink',
+    method:'Build', ice:'Crushed',
+    tasteProfile:'Sweet • Fruity • Refreshing',
+    garnish:'Mint sprig and lime wheel',
+    ingredients:[
+      {t:'liquid',a:'50 ml',  n:'Vodka or white rum'},
+      {t:'liquid',a:'30 ml',  n:'Lime juice'},
+      {t:'liquid',a:'20 ml',  n:'Simple syrup'},
+      {t:'liquid',a:'40 ml',  n:'Berry syrup or puree'},
+      {t:'count', a:'Top up', n:'Soda water'},
+    ],
+    steps:[
+      'Fill a highball glass with crushed ice.',
+      'Add vodka or rum, lime juice, and syrup.',
+      'Pour berry syrup slowly to create a gradient.',
+      'Top with soda water.',
+      'Lightly stir and garnish.',
+    ],
+  },
+  {
+    id: 2,
+    name: 'Violet Martini',
+    desc: 'A floral and slightly sweet cocktail with a delicate citrus finish.',
+    glowRgb: '160,80,255',
+    accent: '#C26BFF',
+    img: 'assets/cocktails/violet_martini.png',
+    abv:'20%', glass:'Martini', style:'Floral', type:'Short drink',
+    method:'Shake', ice:'Cubed',
+    tasteProfile:'Floral • Citrusy • Delicate',
+    garnish:'Blueberries on a pick',
+    ingredients:[
+      {t:'liquid',a:'45 ml',n:'Gin'},
+      {t:'liquid',a:'15 ml',n:'Crème de violette'},
+      {t:'liquid',a:'20 ml',n:'Lemon juice'},
+      {t:'liquid',a:'10 ml',n:'Simple syrup'},
+    ],
+    steps:[
+      'Add all ingredients into a shaker with ice.',
+      'Shake well until chilled.',
+      'Strain into a chilled martini glass.',
+      'Garnish with berries or a cocktail pick.',
+    ],
+  },
+];
+
+function randomCocktail(excludeId) {
+  const pool = excludeId != null ? COCKTAILS.filter(c => c.id !== excludeId) : COCKTAILS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/* ── Icons ───────────────────────────────────────────────── */
+const IconBack = () => (
+  <svg width="10" height="16" viewBox="0 0 10 16" fill="none">
+    <path d="M8 14L2 8L8 2" stroke="rgba(255,255,255,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const IconHeart = ({ on }) => (
+  <svg width="18" height="16" viewBox="0 0 18 16" fill="none">
+    <path d="M9 14.5C9 14.5 1.5 9.5 1.5 5.5C1.5 3.015 3.515 1 6 1C7.38 1 8.62 1.63 9 2.5C9.38 1.63 10.62 1 12 1C14.485 1 16.5 3.015 16.5 5.5C16.5 9.5 9 14.5 9 14.5Z"
+      fill={on ? C.pink : 'none'}
+      stroke={on ? C.pink : C.muted}
+      strokeWidth="1.5" strokeLinejoin="round"/>
+  </svg>
+);
+const IconSettings = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+    <circle cx="9" cy="9" r="2.5" stroke={C.muted} strokeWidth="1.4"/>
+    <path d="M9 1v2M9 15v2M1 9h2M15 9h2M3.22 3.22l1.41 1.41M13.37 13.37l1.41 1.41M3.22 14.78l1.41-1.41M13.37 4.63l1.41-1.41"
+      stroke={C.muted} strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+const IconLiquid = ({ color }) => (
+  <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
+    <path d="M9 2C9 2 4 8 4 11.5C4 14.538 6.238 17 9 17C11.762 17 14 14.538 14 11.5C14 8 9 2 9 2Z"
+      fill={color} fillOpacity="0.25" stroke={color} strokeWidth="1.4" strokeLinejoin="round"/>
+  </svg>
+);
+const IconDot = ({ color }) => (
+  <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
+    <circle cx="9" cy="9" r="6.5" fill={color} fillOpacity="0.18" stroke={color} strokeWidth="1.4"/>
+    <circle cx="9" cy="9" r="2.5" fill={color} fillOpacity="0.4"/>
+  </svg>
+);
+
+/* ── Shared components ───────────────────────────────────── */
+const StatusBar = () => (
+  <div style={{
+    height:50, display:'flex', alignItems:'flex-end', justifyContent:'space-between',
+    padding:'0 28px 10px', flexShrink:0,
+  }}>
+    <span style={{fontSize:13,fontWeight:600,color:'rgba(255,255,255,0.85)'}}>9:41</span>
+    <div style={{display:'flex',gap:6,alignItems:'center'}}>
+      {/* signal bars */}
+      <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
+        <rect x="0" y="4" width="3" height="8" rx="1" fill="rgba(255,255,255,0.8)"/>
+        <rect x="4.5" y="2.5" width="3" height="9.5" rx="1" fill="rgba(255,255,255,0.8)"/>
+        <rect x="9" y="0.5" width="3" height="11.5" rx="1" fill="rgba(255,255,255,0.8)"/>
+        <rect x="13.5" y="0" width="3.5" height="12" rx="1" fill="rgba(255,255,255,0.3)"/>
+      </svg>
+      {/* battery */}
+      <div style={{width:22,height:11,borderRadius:3,border:'1.5px solid rgba(255,255,255,0.55)',position:'relative',padding:1.5}}>
+        <div style={{width:'75%',height:'100%',background:'rgba(255,255,255,0.85)',borderRadius:1.5}}/>
+      </div>
+    </div>
+  </div>
+);
+
+const Btn = ({ children, onClick, active = false }) => (
+  <button onClick={onClick} style={{
+    width:36, height:36, borderRadius:18,
+    display:'flex', alignItems:'center', justifyContent:'center',
+    background: active ? 'rgba(255,79,219,0.15)' : 'rgba(255,255,255,0.08)',
+    border: `1px solid ${active ? 'rgba(255,79,219,0.4)' : 'rgba(255,255,255,0.1)'}`,
+    cursor:'pointer', flexShrink:0, transition:'all 0.2s',
+  }}>{children}</button>
+);
+
+const NeonBtn = ({ label, onClick, primary = false }) => (
+  <button onClick={onClick} style={{
+    width:'100%', height:56, borderRadius:22,
+    border: primary ? 'none' : '1.5px solid rgba(255,255,255,0.15)',
+    background: primary
+      ? 'linear-gradient(90deg,rgba(54,72,119,.95),rgba(90,66,119,.95))'
+      : 'transparent',
+    color: primary ? '#F8F4FB' : C.muted,
+    fontSize:14, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase',
+    cursor:'pointer', fontFamily: C.sans,
+    boxShadow: primary
+      ? '0 0 0 1.35px rgba(99,167,255,.6),0 6px 24px rgba(90,160,255,.12),0 6px 24px rgba(230,125,255,.08)'
+      : 'none',
+    transition:'opacity 0.15s',
+  }}>
+    {label}
+  </button>
+);
+
+const Chip = ({ label }) => (
+  <div style={{
+    padding:'6px 12px', borderRadius:999,
+    background:'rgba(23,27,42,1)', border:'1px solid rgba(255,255,255,0.12)',
+    fontSize:12, fontWeight:600, color:'rgba(255,255,255,0.80)',
+  }}>{label}</div>
+);
+
+/* ── Screen: Shaker ──────────────────────────────────────── */
+function ShakerScreen({ onResult }) {
+  const [shaking, setShaking] = useState(false);
+
+  const shake = useCallback(() => {
+    if (shaking) return;
+    setShaking(true);
+    setTimeout(() => {
+      setShaking(false);
+      onResult(randomCocktail());
+    }, 1500);
+  }, [shaking, onResult]);
+
+  return (
+    <div
+      onClick={shake}
+      className="screen-enter"
+      style={{
+        height:'100%', cursor:'pointer', userSelect:'none',
+        background:`radial-gradient(ellipse 80% 65% at 50% 52%, #1A003A 0%, #0D0014 62%)`,
+        display:'flex', flexDirection:'column', overflow:'hidden',
+        WebkitTapHighlightColor:'transparent',
+      }}
+    >
+      <StatusBar/>
+
+      {/* Settings btn */}
+      <div style={{display:'flex',justifyContent:'flex-end',padding:'0 20px'}}>
+        <Btn onClick={e => e.stopPropagation()}><IconSettings/></Btn>
+      </div>
+
+      {/* Heading */}
+      <div style={{textAlign:'center',padding:'16px 24px 0',zIndex:5}}>
+        {shaking ? (
+          <div key="shaking" style={{animation:'fadeIn .25s ease'}}>
+            <div style={{
+              fontSize:30, fontWeight:700, letterSpacing:'0.1em',
+              textTransform:'uppercase', color:C.pink,
+              textShadow:`0 0 24px rgba(255,79,219,.7)`,
+            }}>SHAKING…</div>
+            <div style={{fontSize:14,color:C.muted,marginTop:6,letterSpacing:'0.04em'}}>
+              Finding the perfect mix
+            </div>
+          </div>
+        ) : (
+          <div key="idle">
+            <div style={{
+              fontSize:58, fontWeight:800, letterSpacing:'0.06em',
+              textTransform:'uppercase', color:C.pink, lineHeight:.95,
+              textShadow:`0 0 40px rgba(255,79,219,.6),0 0 80px rgba(255,79,219,.25)`,
+            }}>SHAKE</div>
+            <div style={{
+              fontSize:20, fontWeight:600, letterSpacing:'0.22em',
+              textTransform:'uppercase', color:C.purple, marginTop:6,
+              textShadow:`0 0 20px rgba(123,97,255,.6)`,
+            }}>TO DISCOVER</div>
+          </div>
+        )}
+      </div>
+
+      {/* Shaker image */}
+      <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',position:'relative'}}>
+        {shaking && [0,300,600].map((d,i) => (
+          <div key={i} style={{
+            position:'absolute',left:'50%',top:'50%',
+            width:200,height:200,borderRadius:'50%',
+            border:`1.5px solid rgba(255,79,219,${.5-i*.12})`,
+            animation:`ringExpand 1.2s ease-out ${d}ms infinite`,pointerEvents:'none',
+          }}/>
+        ))}
+        {shaking && [150,450].map((d,i) => (
+          <div key={`p${i}`} style={{
+            position:'absolute',left:'50%',top:'50%',
+            width:180,height:180,borderRadius:'50%',
+            border:`1px solid rgba(123,97,255,${.35-i*.1})`,
+            animation:`ring2Expand 1.4s ease-out ${d}ms infinite`,pointerEvents:'none',
+          }}/>
+        ))}
+        <img
+          src="assets/ui/shaker.png" alt="shaker"
+          style={{
+            height:260, objectFit:'contain',
+            animation: shaking
+              ? 'shakerShake 0.45s ease-in-out infinite'
+              : 'floatAnim 3.5s ease-in-out infinite',
+            filter: shaking
+              ? 'drop-shadow(0 0 28px rgba(255,79,219,.9)) drop-shadow(0 0 60px rgba(123,97,255,.55))'
+              : 'drop-shadow(0 0 18px rgba(255,79,219,.5)) drop-shadow(0 0 48px rgba(123,97,255,.28))',
+          }}
+        />
+      </div>
+
+      {/* Bottom */}
+      <div style={{
+        padding:'0 24px 40px', display:'flex', flexDirection:'column',
+        alignItems:'center', gap:20,
+      }}>
+        {shaking ? (
+          <>
+            <div style={{fontSize:15,color:'rgba(255,255,255,.74)',textAlign:'center'}}>
+              Finding the perfect mix…
+            </div>
+            <div style={{
+              width:112,height:4,borderRadius:999,
+              overflow:'hidden',background:'rgba(43,41,64,.5)',
+            }}>
+              <div style={{
+                height:'100%',background:'#FF4FC9',borderRadius:999,
+                animation:'indeterminate 1.1s ease-in-out infinite',
+              }}/>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{
+              fontSize:15,color:'rgba(255,255,255,.74)',
+              textAlign:'center',lineHeight:1.45,
+            }}>
+              Shake or tap to get a random cocktail
+            </div>
+            <div style={{width:'100%'}}><NeonBtn label="ЗМІШАТИ" onClick={shake} primary/></div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Screen: Detail ──────────────────────────────────────── */
+function DetailScreen({ cocktail, onShowFull, onBack }) {
+  const [vis, setVis]  = useState(false);
+  const [fav, setFav]  = useState(false);
+  useEffect(() => { const t = setTimeout(() => setVis(true), 60); return () => clearTimeout(t); }, [cocktail.id]);
+
+  const { glowRgb: rgb, accent } = cocktail;
+
+  return (
+    <div style={{
+      height:'100%', display:'flex', flexDirection:'column',
+      background:'#07070D', position:'relative', overflow:'hidden',
+    }}>
+      {/* Bg glows */}
+      <div style={{
+        position:'absolute',top:64,left:-36,right:-36,height:280,pointerEvents:'none',
+        background:`radial-gradient(ellipse 85% 100% at 50% 20%, rgba(${rgb},.10) 0%, transparent 70%)`,
+      }}/>
+      <div style={{
+        position:'absolute',left:24,right:24,top:190,height:240,pointerEvents:'none',
+        background:`radial-gradient(ellipse 85% 100% at 50% 50%, rgba(${rgb},.20) 0%, rgba(${rgb},.07) 50%, transparent 80%)`,
+      }}/>
+
+      <StatusBar/>
+
+      {/* Nav */}
+      <div style={{display:'flex',justifyContent:'space-between',padding:'0 20px 10px',position:'relative',zIndex:5}}>
+        <Btn onClick={onBack}><IconBack/></Btn>
+        <Btn onClick={() => setFav(f=>!f)} active={fav}><IconHeart on={fav}/></Btn>
+      </div>
+
+      {/* Label + name */}
+      <div style={{
+        textAlign:'center', padding:'0 24px',
+        opacity:vis?1:0, transform:vis?'none':'translateY(-8px)',
+        transition:'all .5s cubic-bezier(.16,1,.3,1)', position:'relative', zIndex:5,
+      }}>
+        <div style={{fontSize:13,color:accent,marginBottom:6,fontWeight:500}}>Your cocktail is</div>
+        <div style={{
+          fontSize:32,fontWeight:700,letterSpacing:'0.02em',
+          color:'#F5F2F6',textTransform:'uppercase',lineHeight:1.1,
+        }}>{cocktail.name}</div>
+      </div>
+
+      {/* Image */}
+      <div style={{
+        flex:1,display:'flex',alignItems:'center',justifyContent:'center',
+        position:'relative',zIndex:4,
+        opacity:vis?1:0, transform:vis?'scale(1)':'scale(0.85)',
+        transition:'all .65s cubic-bezier(.16,1,.3,1) .08s',
+      }}>
+        <div style={{
+          position:'absolute',width:220,height:220,borderRadius:'50%',
+          background:`radial-gradient(circle,rgba(${rgb},.55) 0%,transparent 65%)`,
+          filter:'blur(28px)', animation:'glowPulse 2.5s ease-in-out infinite',
+        }}/>
+        <img src={cocktail.img} alt={cocktail.name} style={{
+          height:240,objectFit:'contain',position:'relative',zIndex:1,
+          filter:'drop-shadow(0 20px 40px rgba(0,0,0,.65))',
+          animation:'floatAnim 4s ease-in-out infinite',
+        }}/>
+      </div>
+
+      {/* Bottom */}
+      <div style={{
+        padding:'0 20px 28px',display:'flex',flexDirection:'column',
+        gap:12,position:'relative',zIndex:5,
+        opacity:vis?1:0, transform:vis?'none':'translateY(14px)',
+        transition:'all .5s cubic-bezier(.16,1,.3,1) .2s',
+      }}>
+        <p style={{fontSize:14,color:'rgba(255,255,255,.74)',textAlign:'center',lineHeight:1.45}}>
+          {cocktail.desc}
+        </p>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8,justifyContent:'center'}}>
+          <Chip label={cocktail.abv}/><Chip label={cocktail.glass}/>
+          <Chip label={cocktail.style}/><Chip label={cocktail.type}/>
+        </div>
+        <NeonBtn label="SHOW FULL INFO" onClick={onShowFull} primary/>
+        <NeonBtn label="BACK TO SHAKER"  onClick={onBack}/>
+      </div>
+    </div>
+  );
+}
+
+/* ── Screen: Full info ───────────────────────────────────── */
+function FullScreen({ cocktail, onBack }) {
+  const [fav, setFav] = useState(false);
+  const { glowRgb: rgb, accent } = cocktail;
+
+  const Section = ({ title }) => (
+    <div style={{
+      fontSize:11,fontWeight:700,letterSpacing:'0.18em',
+      textTransform:'uppercase',color:accent,
+      padding:'20px 20px 12px',
+    }}>{title}</div>
+  );
+
+  const InfoRow = ({ label, value }) => (
+    <div style={{display:'flex',gap:8,padding:'0 20px',marginBottom:10}}>
+      <div style={{width:96,fontSize:13,color:'rgba(255,255,255,.56)',flexShrink:0}}>{label}</div>
+      <div style={{fontSize:13,color:'rgba(255,255,255,.86)'}}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div style={{
+      height:'100%', display:'flex', flexDirection:'column',
+      background:'#07070D', position:'relative',
+    }}>
+      {/* Header */}
+      <div style={{
+        flexShrink:0, position:'relative',
+        background:`radial-gradient(ellipse 100% 100% at 50% 0%, rgba(${rgb},.16) 0%, #07070D 70%)`,
+      }}>
+        <StatusBar/>
+        <div style={{
+          display:'flex',justifyContent:'space-between',alignItems:'center',
+          padding:'0 16px 12px',
+        }}>
+          <Btn onClick={onBack}><IconBack/></Btn>
+          <div style={{
+            fontSize:14,fontWeight:700,letterSpacing:'0.04em',
+            color:'rgba(255,255,255,.9)',textTransform:'uppercase',
+          }}>{cocktail.name}</div>
+          <Btn onClick={() => setFav(f=>!f)} active={fav}><IconHeart on={fav}/></Btn>
+        </div>
+        <div style={{height:200,display:'flex',alignItems:'center',justifyContent:'center',position:'relative'}}>
+          <div style={{
+            position:'absolute',width:180,height:180,borderRadius:'50%',
+            background:`radial-gradient(circle,rgba(${rgb},.5) 0%,transparent 65%)`,
+            filter:'blur(24px)', animation:'glowPulse 2.5s ease-in-out infinite',
+          }}/>
+          <img src={cocktail.img} alt={cocktail.name} style={{
+            height:180,objectFit:'contain',position:'relative',zIndex:1,
+            filter:'drop-shadow(0 12px 28px rgba(0,0,0,.6))',
+          }}/>
+        </div>
+      </div>
+
+      {/* Scrollable */}
+      <div className="app-scroll" style={{flex:1,overflowY:'auto',paddingBottom:40}}>
+        <div style={{padding:'16px 20px 0'}}>
+          <div style={{
+            fontSize:26,fontWeight:700,letterSpacing:'0.01em',
+            color:'#F5F2F6',textTransform:'uppercase',
+          }}>{cocktail.name}</div>
+          <div style={{fontSize:14,color:'rgba(255,255,255,.74)',lineHeight:1.45,marginTop:6}}>
+            {cocktail.desc}
+          </div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:12}}>
+            <Chip label={cocktail.abv}/><Chip label={cocktail.glass}/>
+            <Chip label={cocktail.style}/><Chip label={cocktail.type}/>
+          </div>
+        </div>
+
+        <Section title="Ingredients"/>
+        <div style={{padding:'0 20px'}}>
+          {cocktail.ingredients.map((ing,i) => (
+            <div key={i} style={{
+              display:'flex',alignItems:'center',gap:14,
+              paddingBottom:14,marginBottom:14,
+              borderBottom: i<cocktail.ingredients.length-1 ? '1px solid rgba(255,255,255,.06)' : 'none',
+            }}>
+              <div style={{
+                width:26,height:26,borderRadius:'50%',flexShrink:0,
+                border:`1px solid ${accent}cc`,
+                display:'flex',alignItems:'center',justifyContent:'center',
+              }}>
+                {ing.t==='liquid' ? <IconLiquid color={accent}/> : <IconDot color={accent}/>}
+              </div>
+              <div style={{width:58,flexShrink:0,fontSize:13,color:'rgba(255,255,255,.82)',fontWeight:500}}>
+                {ing.a}
+              </div>
+              <div style={{fontSize:14,color:'rgba(255,255,255,.88)'}}>{ing.n}</div>
+            </div>
+          ))}
+        </div>
+
+        <Section title="Steps"/>
+        <div style={{padding:'0 20px'}}>
+          {cocktail.steps.map((step,i) => (
+            <div key={i} style={{
+              display:'flex',gap:12,alignItems:'flex-start',
+              marginBottom: i<cocktail.steps.length-1 ? 18 : 0,
+            }}>
+              <div style={{
+                width:28,height:28,borderRadius:'50%',flexShrink:0,
+                border:`1px solid ${accent}`,
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:12,fontWeight:600,color:accent,
+              }}>{i+1}</div>
+              <div style={{fontSize:14,color:'rgba(255,255,255,.86)',lineHeight:1.45,paddingTop:4}}>
+                {step}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <Section title="Garnish"/>
+        <div style={{padding:'0 20px 4px',fontSize:14,color:'rgba(255,255,255,.86)',lineHeight:1.45}}>
+          {cocktail.garnish}
+        </div>
+
+        <Section title="More Info"/>
+        <InfoRow label="Method"       value={cocktail.method}/>
+        <InfoRow label="Ice"          value={cocktail.ice}/>
+        <InfoRow label="Taste profile" value={cocktail.tasteProfile}/>
+        <InfoRow label="Build"        value={cocktail.type}/>
+      </div>
+    </div>
+  );
+}
+
+/* ── App ─────────────────────────────────────────────────── */
+function App() {
+  const [screen, setScreen]     = useState('shaker');
+  const [cocktail, setCocktail] = useState(null);
+
+  const goResult  = useCallback(c  => { setCocktail(c);  setScreen('detail'); }, []);
+  const goFull    = useCallback(()  => setScreen('full'),    []);
+  const goShaker  = useCallback(()  => setScreen('shaker'), []);
+  const goBack    = useCallback(()  => setScreen('detail'), []);
+
+  return (
+    <div style={{width:'100%',height:'100%',overflow:'hidden',background:C.bg,fontFamily:C.sans}}>
+      {screen==='shaker' && <ShakerScreen onResult={goResult}/>}
+      {screen==='detail' && cocktail && <DetailScreen cocktail={cocktail} onShowFull={goFull} onBack={goShaker}/>}
+      {screen==='full'   && cocktail && <FullScreen   cocktail={cocktail} onBack={goBack}/>}
+    </div>
+  );
+}
+
+/* ── Shell ───────────────────────────────────────────────── */
+function Root() {
+  return (
+    <div className="phone-shell">
+      <div className="island"/>
+      <App/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root/>);
+</script>
+</body>
+</html>
